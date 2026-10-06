@@ -124,8 +124,8 @@ def main():
     ap.add_argument("--min-score", type=float, default=None,
                     help="keep clips at/above this virality score")
     ap.add_argument("--max-clips", type=int, default=45)
-    ap.add_argument("--min-len", type=int, default=20, help="min clip seconds")
-    ap.add_argument("--max-len", type=int, default=60, help="max clip seconds")
+    ap.add_argument("--min-len", type=int, default=25, help="min clip seconds")
+    ap.add_argument("--max-len", type=int, default=45, help="max clip seconds")
     ap.add_argument("--whisper-model", default="small",
                     help="faster-whisper size: tiny/base/small/medium/large-v3")
     ap.add_argument("--no-preflight", action="store_true",
