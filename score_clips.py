@@ -189,24 +189,31 @@ def _make_segment(sentences, a, b):
     }
 
 
-def build_candidates(sentences, min_len, max_len, max_clips):
+def build_candidates(sentences, min_len, max_len, max_clips, allow_overlap=True):
     """Seed windows at the highest-scoring sentences, grow to min_len, dedup, sort.
     Windows always end on a complete sentence (complete-thought rule)."""
     scored = {i: score_sentence(s)[1] for i, s in enumerate(sentences)}
     order = sorted(range(len(sentences)), key=lambda i: scored[i], reverse=True)
     taken = [False] * len(sentences)
     accepted = []
+    seen_windows = set()
 
     for seed in order:
-        if taken[seed] or len(accepted) >= max_clips:
+        if (not allow_overlap and taken[seed]) or len(accepted) >= max_clips:
             continue
-        w = _grow_window(sentences, seed, taken, min_len, max_len)
+        growth_taken = taken if not allow_overlap else [False] * len(sentences)
+        w = _grow_window(sentences, seed, growth_taken, min_len, max_len)
         if w is None:
             continue
         a, b = w
+        key = (round(sentences[a]["start"], 2), round(sentences[b]["end"], 2))
+        if key in seen_windows:
+            continue
+        seen_windows.add(key)
         accepted.append(_make_segment(sentences, a, b))
-        for k in range(a, b + 1):
-            taken[k] = True
+        if not allow_overlap:
+            for k in range(a, b + 1):
+                taken[k] = True
     accepted.sort(key=lambda s: s["start"])
     return accepted
 
@@ -351,13 +358,20 @@ Transcript:
         if 2.0 < ends[ei] - starts[si] < max_len + 15:
             seg["start"], seg["end"] = round(starts[si], 2), round(ends[ei], 2)
 
-    valid.sort(key=lambda s: s["start"])
+    # Similar/overlapping clips are allowed for high-volume campaign harvesting,
+    # but an exact timestamp duplicate is never emitted.
+    valid.sort(key=lambda s: (-s["overall"], s["start"]))
     dedup = []
+    seen = set()
     for seg in valid:
-        if dedup and seg["start"] < dedup[-1]["end"] - 2:
+        key = (round(seg["start"], 2), round(seg["end"], 2))
+        if key in seen:
             continue
+        seen.add(key)
         dedup.append(seg)
-    return dedup[:max_clips]
+    dedup = dedup[:max_clips]
+    dedup.sort(key=lambda s: s["start"])
+    return dedup
 
 
 def _nearest(values, t):
@@ -377,8 +391,8 @@ def _nearest(values, t):
 
 # ----------------------------------------------------------------- run / cli
 
-def run(workdir, llm=None, host=OLLAMA_HOST, min_score=None, max_clips=10,
-        min_len=20, max_len=75, search=None, pick=None):
+def run(workdir, llm=None, host=OLLAMA_HOST, min_score=None, max_clips=45,
+        min_len=20, max_len=60, search=None, pick=None, campaign=""):
     """Score the transcript in workdir and write workdir/segments.json.
 
     Returns (segments, mode) where mode is 'ollama' or 'heuristic'.
@@ -401,7 +415,7 @@ def run(workdir, llm=None, host=OLLAMA_HOST, min_score=None, max_clips=10,
         print(f"Keyword search '{search}': {len(segments)} match(es)", flush=True)
     elif llm:
         ms = min_score if min_score is not None else 8.0
-        segments = ollama_select(data, llm, host, ms, max_clips, min_len, max_len)
+        segments = ollama_select(data, llm, host, ms, max_clips, min_len, max_len, campaign=campaign)
         if segments is not None:
             mode = "ollama"
     if segments is None:
@@ -439,9 +453,10 @@ def main():
                     help="Ollama host (default http://localhost:11434)")
     ap.add_argument("--min-score", type=float, default=None,
                     help="keep clips at/above this score (default 6.5 heuristic, 8.0 llm)")
-    ap.add_argument("--max-clips", type=int, default=10)
+    ap.add_argument("--max-clips", type=int, default=45,
+                    help="target clip count (default 45; ideal for ~2h source)")
     ap.add_argument("--min-len", type=int, default=20, help="min clip seconds")
-    ap.add_argument("--max-len", type=int, default=75, help="max clip seconds")
+    ap.add_argument("--max-len", type=int, default=60, help="max clip seconds")
     ap.add_argument("--search", default=None, metavar="KEYWORDS",
                     help="skip virality scoring: build clips around transcript "
                          "sentences containing ALL keywords (e.g. --search \"pricing\")")
@@ -450,7 +465,8 @@ def main():
                          "(review workflow)")
     args = ap.parse_args()
     run(args.workdir, args.llm, args.host, args.min_score, args.max_clips,
-        args.min_len, args.max_len, search=args.search, pick=args.clips)
+        args.min_len, args.max_len, search=args.search, pick=args.clips,
+        campaign=args.campaign)
     print("SCORING COMPLETE", flush=True)
 
 
