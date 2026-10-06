@@ -24,10 +24,12 @@ No paid APIs, no API keys. Usage:
 import re
 import json
 import argparse
+import os
 import urllib.request
 from pathlib import Path
 
 OLLAMA_HOST = "http://localhost:11434"
+OPENROUTER_HOST = "https://openrouter.ai/api/v1"
 
 FILLER_TOKENS = {"um", "uh", "uhh", "umm", "erm", "er", "hmm", "mmm", "mm", "ah", "eh"}
 FILLER_SEQS = {("you", "know"), ("i", "mean"), ("kind", "of"), ("sort", "of")}
@@ -334,6 +336,132 @@ LLM_SYSTEM = (
     '"overall": <0-10>, "viral_type": "<controversy|podcast|cliffhanger|chaos|story|emotional|challenge|educational>", '
     '"why": "<one short reason this could earn views>"}}]'
 )
+
+# ------------------------------------------------------- cloud/free provider
+
+def openrouter_select(data, model, api_key, host, min_score, max_clips,
+                      min_len, max_len, campaign="", timeout=240):
+    """Use OpenRouter's OpenAI-compatible API, then reuse the same viral prompt.
+
+    Returns None on provider/rate-limit/JSON failure so the caller can fall back
+    to local Ollama or heuristics without breaking the pipeline.
+    """
+    sentences = sentenceize(data["words"])
+    if not sentences:
+        return None
+    chunks = [sentences[i:i + 240] for i in range(0, len(sentences), 240)] or [[]]
+    raw = []
+    print(f"  Cloud viral brain: {len(chunks)} transcript chunk(s), model={model}", flush=True)
+
+    try:
+        for batch_no, batch in enumerate(chunks, 1):
+            per_chunk_target = max(3, (max_clips + len(chunks) - 1) // len(chunks) + 2)
+            print(f"  Cloud viral brain: analysing chunk {batch_no}/{len(chunks)} "
+                  f"({len(batch)} sentences, target {per_chunk_target})...", flush=True)
+            lines = "\n".join(
+                f"{s['start']:.1f}-{s['end']:.1f}: {s['text']}" for s in batch
+            )
+            sys_msg = LLM_SYSTEM.format(
+                min_len=min_len, max_len=max_len,
+                max_clips=max_clips, min_score=min_score
+            )
+            sys_msg += (
+                f"\n\nFor THIS transcript chunk, return the best {per_chunk_target} "
+                "usable candidates if possible. Rank the strongest available moments."
+            )
+            if campaign:
+                sys_msg += (
+                    "\n\nCAMPAIGN BRIEF:\n" + campaign +
+                    "\nTreat campaign relevance as a major selection criterion."
+                )
+            payload = {
+                "model": model,
+                "temperature": 0.2,
+                "response_format": {"type": "json_object"},
+                "messages": [
+                    {"role": "system", "content": sys_msg +
+                     '\nReturn an object with one key named "clips" containing the array.'},
+                    {"role": "user", "content":
+                     f"Video duration: {data['duration']:.0f}s\n\nTranscript:\n{lines}"}
+                ],
+            }
+            req = urllib.request.Request(
+                host.rstrip("/") + "/chat/completions",
+                data=json.dumps(payload).encode("utf-8"),
+                headers={
+                    "Content-Type": "application/json",
+                    "Authorization": f"Bearer {api_key}",
+                    "HTTP-Referer": "https://github.com/mikailyousuf-sketch/chopify",
+                    "X-Title": "Creator Rewards Clipper",
+                },
+            )
+            with urllib.request.urlopen(req, timeout=timeout) as response:
+                body = json.loads(response.read().decode("utf-8"))
+            content = body["choices"][0]["message"]["content"]
+            parsed = json.loads(content)
+            clips = parsed.get("clips", []) if isinstance(parsed, dict) else parsed
+            if not isinstance(clips, list):
+                clips = []
+            print(f"  Cloud viral brain: chunk {batch_no}/{len(chunks)} returned "
+                  f"{len(clips)} candidate(s).", flush=True)
+            raw.extend(clips)
+    except Exception as exc:  # noqa: BLE001
+        print(f"  Cloud viral brain unavailable ({exc})", flush=True)
+        return None
+
+    return _normalise_ai_clips(
+        raw, data, sentences, max_clips, min_len, max_len,
+        source_name="openrouter"
+    )
+
+
+def _normalise_ai_clips(raw, data, sentences, max_clips, min_len, max_len,
+                        source_name="ai"):
+    """Validate provider output and preserve viral metadata."""
+    valid = []
+    allowed_types = {"controversy", "podcast", "cliffhanger", "chaos",
+                     "story", "emotional", "challenge", "educational"}
+    for it in raw:
+        try:
+            start, end = float(it["start"]), float(it["end"])
+            overall = float(it.get("overall", 0))
+            hook = str(it.get("hook") or "clip")
+        except (KeyError, TypeError, ValueError):
+            continue
+        start = max(0.0, min(start, data["duration"] - min_len))
+        end = max(start + min_len, min(end, data["duration"]))
+        if end - start > max_len + 15:
+            end = start + max_len
+        viral_type = str(it.get("viral_type") or "story").strip().lower()
+        if viral_type not in allowed_types:
+            viral_type = "story"
+        valid.append({
+            "start": round(start, 2), "end": round(end, 2),
+            "hook": make_hook(hook, 10), "overall": round(overall, 1),
+            "viral_type": viral_type,
+            "why": str(it.get("why") or "").strip()[:180],
+            "selection_source": source_name,
+        })
+
+    starts = [s["start"] for s in sentences]
+    ends = [s["end"] for s in sentences]
+    for seg in valid:
+        si = _nearest(starts, seg["start"])
+        ei = _nearest(ends, seg["end"])
+        if 2.0 < ends[ei] - starts[si] < max_len + 15:
+            seg["start"], seg["end"] = round(starts[si], 2), round(ends[ei], 2)
+
+    valid.sort(key=lambda s: (-s["overall"], s["start"]))
+    dedup, seen = [], set()
+    for seg in valid:
+        key = (round(seg["start"], 2), round(seg["end"], 2))
+        if key not in seen:
+            seen.add(key)
+            dedup.append(seg)
+        if len(dedup) >= max_clips:
+            break
+    return dedup or None
+
 
 # ------------------------------------------------------------------- ollama
 
