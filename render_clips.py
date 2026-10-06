@@ -267,6 +267,16 @@ def build_ass(words, clip_start, clip_end, path, tw, th, font_size, margin_v,
     Path(path).write_text(header + "\n".join(events) + "\n", encoding="utf-8")
 
 
+def original_editorial(seg):
+    """Create a lightweight original editorial layer without changing the quote."""
+    hook = str(seg.get("hook", "clip")).replace("-", " ").strip()
+    return {
+        "editorial_hook": f"Why this matters: {hook}",
+        "takeaway": f"The key point: {hook}",
+        "source_preserved": True,
+    }
+
+
 def write_meta(seg, out_path):
     """Deterministic ready-to-post metadata saved as <clip>.meta.json."""
     hook = str(seg.get("hook", "clip")).replace("-", " ").strip()
@@ -279,7 +289,10 @@ def write_meta(seg, out_path):
         "score": seg.get("overall"),
         "start": seg.get("start"),
         "end": seg.get("end"),
+        "original_mode": bool(seg.get("original_mode")),
     }
+    if seg.get("original_mode"):
+        meta["editorial"] = original_editorial(seg)
     Path(out_path).with_suffix(".meta.json").write_text(
         json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
     return Path(out_path).with_suffix(".meta.json")
