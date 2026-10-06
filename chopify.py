@@ -109,9 +109,9 @@ def main():
                     help="campaign brief: audience, desired moments, exclusions and rules")
     ap.add_argument("--original-mode", action=argparse.BooleanOptionalAction, default=False,
                     help="transform clips with an original editorial layer (toggle with --original-mode/--no-original-mode)")
-    ap.add_argument("--llm", nargs="?", const="qwen2.5:7b", default=None,
+    ap.add_argument("--llm", nargs="?", const="qwen2.5:3b", default=None,
                     metavar="MODEL",
-                    help="pick clips with a local Ollama model (e.g. qwen2.5:7b)")
+                    help="pick clips with a local Ollama model (default qwen2.5:3b)")
     ap.add_argument("--search", default=None, metavar="KEYWORDS",
                     help="skip virality scoring: clip around transcript sentences "
                          "containing ALL keywords (e.g. --search \"pricing\")")
@@ -126,7 +126,7 @@ def main():
     ap.add_argument("--max-clips", type=int, default=45)
     ap.add_argument("--min-len", type=int, default=20, help="min clip seconds")
     ap.add_argument("--max-len", type=int, default=60, help="max clip seconds")
-    ap.add_argument("--whisper-model", default="medium",
+    ap.add_argument("--whisper-model", default="small",
                     help="faster-whisper size: tiny/base/small/medium/large-v3")
     ap.add_argument("--no-preflight", action="store_true",
                     help="skip the environment check (ffmpeg, packages, ...)")
