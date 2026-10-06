@@ -351,7 +351,7 @@ def render(seg, words, source, W, H, workdir, aspect, out_dir=None, style=DEFAUL
         mode = "full-frame"
 
     suffix = ".preview" if preview else ""
-    out = out_dir / (sanitize(seg.get("hook", "clip")) + suffix + ".mp4")
+    out = out_dir / (sanitize(seg.get("hook", "clip")) + f"-{int(float(seg['start']) * 1000):08d}" + suffix + ".mp4")
     cmd = ["ffmpeg", "-y", "-ss", f"{start:.3f}", "-i", str(render_src),
            "-t", f"{dur:.3f}", "-vf", vf,
            "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
