@@ -230,7 +230,7 @@ def ass_escape(s):
 
 
 def build_ass(words, clip_start, clip_end, path, tw, th, font_size, margin_v,
-              style_name=DEFAULT_STYLE):
+              style_name=DEFAULT_STYLE, original_hook=None):
     st = get_style(style_name)
     sub = [w for w in words if w["end"] > clip_start and w["start"] < clip_end]
     header = (
@@ -242,13 +242,21 @@ def build_ass(words, clip_start, clip_end, path, tw, th, font_size, margin_v,
         "ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, "
         "MarginL, MarginR, MarginV, Encoding\n"
         f"Style: Cap,{st['font']},{font_size},&H00FFFFFF,&H000000FF,&H00000000,"
-        f"&H64000000,{st['weight']},0,0,0,100,100,0,0,1,5,2,2,80,80,{margin_v},1\n\n"
+        f"&H64000000,{st['weight']},0,0,0,100,100,0,0,1,5,2,2,80,80,{margin_v},1\n"
+        f"Style: Hook,{st['font']},{max(24, int(font_size * 0.72))},&H00FFFFFF,&H000000FF,&H00000000,"
+        f"&H96000000,-1,0,0,0,100,100,0,0,3,4,1,8,80,80,{max(70, int(th * 0.10))},1\n\n"
         "[Events]\n"
         "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, "
         "Effect, Text\n"
     )
     groups = [sub[i:i + WORDS_PER_LINE] for i in range(0, len(sub), WORDS_PER_LINE)]
     events = []
+    if original_hook:
+        hook_text = ass_escape(str(original_hook).strip())
+        if hook_text:
+            hook_end = min(3.2, max(1.8, clip_end - clip_start))
+            events.append(
+                f"Dialogue: 1,{ass_time(0)},{ass_time(hook_end)},Hook,,0,0,0,,{hook_text.upper()}")
     hl = r"{\c" + st["highlight"] + "}"
     white = r"{\c&HFFFFFF&}"
     for g in groups:
@@ -325,8 +333,10 @@ def render(seg, words, source, W, H, workdir, aspect, out_dir=None, style=DEFAUL
         print(f"  tightened: {len(keeps)} keep-ranges, "
               f"{(end - start) - dur:.1f}s removed", flush=True)
         start = 0.0
+    editorial = original_editorial(seg) if seg.get("original_mode") else None
     build_ass(cap_words, start, start + dur, out_dir / "_caption.ass",
-              tw, th, font_size, margin_v, style)
+              tw, th, font_size, margin_v, style,
+              original_hook=(editorial or {}).get("editorial_hook"))
 
     needs_track = cw < W * 0.95          # real horizontal crop -> track the speaker
     if needs_track:
