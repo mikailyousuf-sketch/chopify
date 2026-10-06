@@ -293,32 +293,46 @@ def pick_segments(segments, spec):
 
 def print_table(segments):
     """Numbered candidate table - pairs with --clips for the review workflow."""
-    print("\n  #    start ->      end  score  hook", flush=True)
+    print("\n  #    start ->      end  score  type          hook", flush=True)
     for i, s in enumerate(segments, 1):
         print(f"  {i:>2}  {s['start']:8.2f} -> {s['end']:8.2f}  {s['overall']:4.1f}/10"
-              f"  {s['hook']}", flush=True)
+              f"  {s.get('viral_type', 'heuristic'):<12}  {s['hook']}", flush=True)
     print("  render a subset with --clips 1,3,5", flush=True)
 
 LLM_SYSTEM = (
-    "You are the lead editor for high-retention TikTok, Reels and YouTube Shorts cut from YouTube/streamer footage. "
-    "You are NOT summarising a transcript; you are choosing moments people would actually stop scrolling to watch.\n"
+    "You are the lead viral-content editor for TikTok, Instagram Reels, YouTube Shorts and X. "
+    "Your job is to identify moments with VIEW POTENTIAL, not merely clean transcript excerpts. "
+    "Assume the viewer has zero prior context and is deciding whether to swipe every second.\n"
+    "VIRAL CONTENT LENSES - actively search every transcript chunk for these:\n"
+    "1. CONTROVERSY/DEBATE: polarising opinions, disagreement, taboo/unpopular takes, accusations, conflict, strong claims, moments that make viewers choose a side. Do not manufacture controversy that is not actually present.\n"
+    "2. PODCAST/QUOTE: a sharp insight, story, confession, lesson, surprising fact, memorable quote or answer that stands alone and feels worth sharing.\n"
+    "3. CLIFFHANGER/CURIOSITY: an unresolved question, looming consequence, reveal, challenge or 'what happens next?' moment. Preserve a satisfying local beat, but the ending may intentionally create curiosity for the source/next part when truthful. Never fabricate missing events.\n"
+    "4. CHAOS/REACTION: arguments, fails, shocks, sudden changes, embarrassment, laughter, disbelief, physical reactions or high-energy exchanges.\n"
+    "5. STORY/PAYOFF: setup -> escalation -> twist/reveal/result. Include enough setup for the payoff to land.\n"
+    "6. RELATABLE/EMOTIONAL: fear, ambition, pain, pride, vulnerability, awkwardness, friendship, rivalry or a situation viewers strongly recognise.\n"
+    "7. CHALLENGE/STAKES: a goal, timer, bet, risk, competition, punishment, attempt, win/loss or clear consequence.\n"
+    "8. EDUCATIONAL/HOW-TO: useful explanation, framework, mistake, lesson or surprising mechanism with a concrete takeaway.\n"
     "EDITORIAL RULES:\n"
-    "- Every clip must work for a viewer who has seen NOTHING before it. Start early enough to establish who/what/why.\n"
-    "- The clip needs a clear mini-story: immediate curiosity or action -> necessary context -> escalation/reaction -> payoff -> clean exit.\n"
-    "- Prefer funny exchanges, conflict, challenges, surprises, strong opinions, reveals, failures, wins, emotional reactions, absurd moments and quotable statements.\n"
-    "- Reject greetings, introductions, navigation, repetitive instructions, generic chatter, dead air and transitions between scenes.\n"
-    "- Never use a weak one-word utterance such as 'listen', 'yeah', 'okay' or 'bro' as the hook unless the following moment itself is exceptional.\n"
-    "- Do not select a punchline without its setup. Do not start after the question/challenge that makes the response meaningful.\n"
-    "- Never end before the reaction, answer or payoff. Never cut a sentence or thought in half.\n"
-    "- Clip length must be {min_len}-{max_len}s. Prefer 30-40s when context earns the time; shorter is fine when the full payoff lands earlier.\n"
-    "- Overlapping variants are allowed only when the framing/start point meaningfully changes the story. Never return the exact same cut twice.\n"
-    "SCORING:\n"
-    "- 9-10 = must-post moment with a strong standalone hook and payoff.\n"
-    "- 7-8 = strong usable short.\n"
-    "- 5-6 = filler/average.\n"
-    "- below 5 = do not choose unless there is genuinely nothing better.\n"
-    "- Use 'overall' to RANK the best available moments. Do not return zero just because the source is imperfect.\n"
-    'Respond with JSON only: [{{"start": <sec>, "end": <sec>, "hook": "<specific 3-8 word hook>", "overall": <0-10>}}]'
+    "- Every selected clip must make sense to someone who has seen NOTHING before it. Start before the context needed to understand the hook.\n"
+    "- Prefer an immediate spoken/visual hook in the first 1-3 seconds. If the best hook occurs later, start at the shortest earlier setup that makes it land.\n"
+    "- Preserve the question before a great answer, the challenge before a reaction, the accusation before a defence, and the setup before a punchline.\n"
+    "- End after the payoff/reaction unless the clip is deliberately classified cliffhanger, where the unresolved curiosity must be genuine and compelling.\n"
+    "- Reject greetings, introductions, sponsor reads, navigation, repetitive instructions, dead air, generic chatter and scene transitions.\n"
+    "- Never treat weak words like 'listen', 'yeah', 'okay', 'bro' as the hook unless the actual following event is exceptional.\n"
+    "- Clip length must be {min_len}-{max_len}s. Prefer 28-40s when context earns it; never pad a weak moment.\n"
+    "- Seek VARIETY. Do not fill the batch with ten versions of the same type of moment.\n"
+    "SCORING - score VIEW POTENTIAL, not grammar:\n"
+    "- 9-10: must-post; powerful hook + clear stakes/curiosity + memorable payoff/reaction.\n"
+    "- 8: strong post with obvious audience appeal.\n"
+    "- 7: useful secondary post.\n"
+    "- 5-6: average/filler. Below 5: weak.\n"
+    "- Rank the strongest available moments even when the source is imperfect; do not return zero by default.\n"
+    "HOOK TEXT RULES:\n"
+    "- hook must describe the actual reason to watch, not simply copy the first transcript words.\n"
+    "- Keep it specific, truthful and punchy; no fabricated claims or fake quotes.\n"
+    'Respond with JSON only: [{{"start": <sec>, "end": <sec>, "hook": "<3-10 word hook>", '
+    '"overall": <0-10>, "viral_type": "<controversy|podcast|cliffhanger|chaos|story|emotional|challenge|educational>", '
+    '"why": "<one short reason this could earn views>"}}]'
 )
 
 # ------------------------------------------------------------------- ollama
@@ -393,8 +407,15 @@ def ollama_select(data, model, host, min_score, max_clips, min_len, max_len, cam
         end = max(start + min_len, min(end, data["duration"]))
         if end - start > max_len + 15:
             end = start + max_len
+        viral_type = str(it.get("viral_type") or "story").strip().lower()
+        allowed_types = {"controversy", "podcast", "cliffhanger", "chaos",
+                         "story", "emotional", "challenge", "educational"}
+        if viral_type not in allowed_types:
+            viral_type = "story"
+        why = str(it.get("why") or "").strip()[:180]
         valid.append({"start": round(start, 2), "end": round(end, 2),
-                      "hook": make_hook(hook, 8), "overall": round(overall, 1)})
+                      "hook": make_hook(hook, 10), "overall": round(overall, 1),
+                      "viral_type": viral_type, "why": why})
 
     # snap to sentence boundaries (nearest within 3s) so clips never cut mid-word
     starts = [s["start"] for s in sentences]
