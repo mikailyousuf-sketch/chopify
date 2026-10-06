@@ -66,9 +66,12 @@ def get_style(name):
 WORDS_PER_LINE = 3
 DET_FPS = 5
 DET_W = 640
-EMA_ALPHA = 0.20
+EMA_ALPHA = 0.14
 JUMP_FRAC = 0.22
 MARGIN_FRAC = 0.18
+# Require a new far-away face to persist before changing subjects. This stops
+# two-person scenes from ping-ponging the vertical crop every few frames.
+SUBJECT_SWITCH_FRAMES = 4
 YUNET_URL = ("https://github.com/opencv/opencv_zoo/raw/main/models/"
              "face_detection_yunet/face_detection_yunet_2023mar.onnx")
 
@@ -173,36 +176,58 @@ def detect_track(source, start, dur, W, workdir):
 
 
 def smooth_track(track, W, crop_w):
+    """Smooth face centres with subject-lock hysteresis.
+
+    Small movements follow the current subject gently. A face that suddenly
+    appears far away must remain there for SUBJECT_SWITCH_FRAMES detections
+    before the crop changes subjects. That makes dialogue shots feel edited
+    instead of twitching between people.
+    """
     half = crop_w / 2.0
     max_off = half - crop_w * MARGIN_FRAC
     jump = W * JUMP_FRAC
     known = [c for _, c in track if c is not None]
     base = sorted(known)[len(known) // 2] if known else W / 2.0
-    filled = []
-    last = base
-    for t, c in track:
-        if c is None:
-            c = last
-        last = c
-        filled.append((t, c))
-    if not filled:
+    if not track:
         return [(0.0, min(max(base, half), W - half))]
-    out = []
-    c = filled[0][1]
-    prev_face = filled[0][1]
-    for t, face in filled:
-        if abs(face - prev_face) > jump:
-            c = face
-        else:
-            c += EMA_ALPHA * (face - c)
-        if face - c > max_off:
-            c = face - max_off
-        elif c - face > max_off:
-            c = face + max_off
-        prev_face = face
-        out.append((t, min(max(c, half), W - half)))
-    return out
 
+    out = []
+    centre = base
+    last_face = base
+    pending = None
+    pending_frames = 0
+
+    for t, detected in track:
+        face = last_face if detected is None else detected
+
+        if abs(face - last_face) > jump:
+            # A distant detection may just be the other person becoming larger
+            # for one frame. Only accept it as a subject/shot switch if stable.
+            if pending is not None and abs(face - pending) <= jump * 0.55:
+                pending = (pending * pending_frames + face) / (pending_frames + 1)
+                pending_frames += 1
+            else:
+                pending = face
+                pending_frames = 1
+
+            if pending_frames >= SUBJECT_SWITCH_FRAMES:
+                last_face = pending
+                pending = None
+                pending_frames = 0
+        else:
+            last_face = face
+            pending = None
+            pending_frames = 0
+
+        centre += EMA_ALPHA * (last_face - centre)
+        if last_face - centre > max_off:
+            centre = last_face - max_off
+        elif centre - last_face > max_off:
+            centre = last_face + max_off
+
+        centre = min(max(centre, half), W - half)
+        out.append((t, centre))
+    return out
 
 def build_sendcmd(track, crop_w, path):
     lines = []
