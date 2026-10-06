@@ -81,7 +81,8 @@ def check_environment(runner=subprocess.run):
 
 
 def sh(cmd):
-    print("\n" + "=" * 70, flush=True)
+    print("
+" + "=" * 70, flush=True)
     print(">", " ".join(str(c) for c in cmd), flush=True)
     print("=" * 70, flush=True)
     subprocess.run([str(c) for c in cmd], check=True)
@@ -93,7 +94,10 @@ def main():
         description="Long video -> campaign-scored clips for TikTok, Reels, Shorts and X. Local-first and free.")
     ap.add_argument("url", help="Local video path or any yt-dlp-supported URL")
     ap.add_argument("--workdir", default="work", help="intermediate files dir")
-    ap.add_argument("--platform", default="vertical", choices=["vertical", "x", "all"],\n                    help="vertical=TikTok/Reels/Shorts, x=landscape X export, all=both")\n    ap.add_argument("--aspect", default=None, choices=["16:9", "9:16", "1:1"],\n                    help="override output aspect ratio")
+    ap.add_argument("--platform", default="vertical", choices=["vertical", "x", "all"],
+                    help="vertical=TikTok/Reels/Shorts, x=landscape X export, all=both")
+    ap.add_argument("--aspect", default=None, choices=["16:9", "9:16", "1:1"],
+                    help="override output aspect ratio")
     ap.add_argument("--out", default=None,
                     help="output directory (default ./clips, or $CHOPIFY_OUT)")
     ap.add_argument("--style", default="default",
@@ -102,7 +106,9 @@ def main():
                     help="remove filler words (um, uh...) and long silences")
     ap.add_argument("--loudnorm", action="store_true",
                     help="normalize audio to -14 LUFS (platform standard)")
-    ap.add_argument("--campaign", default="",\n                    help="campaign brief: audience, desired moments, exclusions and rules")\n    ap.add_argument("--llm", nargs="?", const="qwen2.5:7b", default=None,
+    ap.add_argument("--campaign", default="",
+                    help="campaign brief: audience, desired moments, exclusions and rules")
+    ap.add_argument("--llm", nargs="?", const="qwen2.5:7b", default=None,
                     metavar="MODEL",
                     help="pick clips with a local Ollama model (e.g. qwen2.5:7b)")
     ap.add_argument("--search", default=None, metavar="KEYWORDS",
@@ -146,7 +152,10 @@ def main():
     cmd = [PY, HERE / "score_clips.py", workdir,
            "--max-clips", args.max_clips,
            "--min-len", args.min_len, "--max-len", args.max_len]
-    if args.campaign:\n        cmd += ["--campaign", args.campaign]\n    if args.llm:\n        cmd += ["--llm", args.llm]
+    if args.campaign:
+        cmd += ["--campaign", args.campaign]
+    if args.llm:
+        cmd += ["--llm", args.llm]
     if args.min_score is not None:
         cmd += ["--min-score", args.min_score]
     if args.search:
@@ -155,7 +164,31 @@ def main():
         cmd += ["--clips", args.clips]
     sh(cmd)
 
-    # Stage 3: render. One vertical master serves TikTok, Instagram Reels and\n    # YouTube Shorts; X can receive a landscape master when requested.\n    aspects = [args.aspect] if args.aspect else (["9:16", "16:9"] if args.platform == "all"\n                                                else ["16:9"] if args.platform == "x"\n                                                else ["9:16"])\n    for aspect in aspects:\n        platform_out = args.out\n        if args.platform == "all" and args.out:\n            platform_out = str(Path(args.out) / ("vertical" if aspect == "9:16" else "x"))\n        cmd = [PY, HERE / "render_clips.py", workdir,\n               "--aspect", aspect, "--style", args.style]\n        if platform_out:\n            cmd += ["--out", platform_out]\n        if args.tighten:\n            cmd.append("--tighten")\n        if args.loudnorm:\n            cmd.append("--loudnorm")\n        if args.preview:\n            cmd.append("--preview")\n        sh(cmd)\n    print("\\nCHOPIFY CREATOR REWARDS COMPLETE", flush=True)\n    return\n\n    # legacy single-render path
+    # Stage 3: render. One vertical master serves TikTok, Instagram Reels and
+    # YouTube Shorts; X can receive a landscape master when requested.
+    aspects = [args.aspect] if args.aspect else (["9:16", "16:9"] if args.platform == "all"
+                                                else ["16:9"] if args.platform == "x"
+                                                else ["9:16"])
+    for aspect in aspects:
+        platform_out = args.out
+        if args.platform == "all" and args.out:
+            platform_out = str(Path(args.out) / ("vertical" if aspect == "9:16" else "x"))
+        cmd = [PY, HERE / "render_clips.py", workdir,
+               "--aspect", aspect, "--style", args.style]
+        if platform_out:
+            cmd += ["--out", platform_out]
+        if args.tighten:
+            cmd.append("--tighten")
+        if args.loudnorm:
+            cmd.append("--loudnorm")
+        if args.preview:
+            cmd.append("--preview")
+        sh(cmd)
+    print("\
+CHOPIFY CREATOR REWARDS COMPLETE", flush=True)
+    return
+
+    # legacy single-render path
     if args.out:
         cmd += ["--out", args.out]
     if args.tighten:
@@ -165,7 +198,8 @@ def main():
     if args.preview:
         cmd.append("--preview")
     sh(cmd)
-    print("\nCHOPIFY COMPLETE", flush=True)
+    print("
+CHOPIFY COMPLETE", flush=True)
 
 
 if __name__ == "__main__":
