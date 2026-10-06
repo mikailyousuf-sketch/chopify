@@ -380,7 +380,7 @@ def _nearest(values, t):
 # ----------------------------------------------------------------- run / cli
 
 def run(workdir, llm=None, host=OLLAMA_HOST, min_score=None, max_clips=45,
-        min_len=20, max_len=60, search=None, pick=None, campaign=""):
+        min_len=20, max_len=60, search=None, pick=None, campaign="", original_mode=False):
     """Score the transcript in workdir and write workdir/segments.json.
 
     Returns (segments, mode) where mode is 'ollama' or 'heuristic'.
@@ -416,6 +416,10 @@ def run(workdir, llm=None, host=OLLAMA_HOST, min_score=None, max_clips=45,
               flush=True)
         segments = build_candidates(sentences, min_len, max_len, 1)
 
+    if original_mode:
+        for seg in segments:
+            seg["original_mode"] = True
+            seg["editorial_angle"] = "context_hook_takeaway"
     segments = pick_segments(segments, pick)
     if not segments:
         if pick:
@@ -435,6 +439,8 @@ def main():
     ap.add_argument("workdir", nargs="?", default="work")
     ap.add_argument("--campaign", default="",
                     help="campaign brief/instructions used by local LLM selection")
+    ap.add_argument("--original-mode", action="store_true",
+                    help="mark candidates for substantive original editorial treatment")
     ap.add_argument("--llm", nargs="?", const="qwen2.5:7b", default=None, metavar="MODEL",
                     help="score with a local Ollama model (e.g. qwen2.5:7b, llama3.1:8b)")
     ap.add_argument("--host", default=OLLAMA_HOST,
@@ -453,7 +459,7 @@ def main():
     args = ap.parse_args()
     run(args.workdir, args.llm, args.host, args.min_score, args.max_clips,
         args.min_len, args.max_len, search=args.search, pick=args.clips,
-        campaign=args.campaign)
+        campaign=args.campaign, original_mode=args.original_mode)
     print("SCORING COMPLETE", flush=True)
 
 
