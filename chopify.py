@@ -198,6 +198,10 @@ def main():
         if args.campaign:
             remix_cmd += ["--campaign", args.campaign]
         sh(remix_cmd)
+        # A remix is never trusted on discovery alone. The verifier checks the
+        # exact quoted source passages and may legitimately approve zero.
+        sh([PY, HERE / "verify_remixes.py", workdir,
+            "--model", args.cloud_brain or "openrouter/free"])
 
     # Optional Stage 2d: platform-specific copy from the final judged clips.
     if args.generate_captions:
@@ -223,6 +227,14 @@ def main():
         if args.preview:
             cmd.append("--preview")
         sh(cmd)
+    if args.find_remixes:
+        verified = workdir / "verified_remixes.json"
+        if verified.exists():
+            try:
+                count = len(__import__("json").loads(verified.read_text(encoding="utf-8-sig")))
+                print(f"\nREMIXES VERIFIED: {count} (zero is a valid result)", flush=True)
+            except Exception:
+                pass
     print("\nCHOPIFY CREATOR REWARDS COMPLETE", flush=True)
 
 
