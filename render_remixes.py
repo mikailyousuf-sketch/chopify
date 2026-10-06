@@ -24,7 +24,11 @@ def main():
     out=Path(args.out).resolve(); out.mkdir(parents=True,exist_ok=True)
     temp=out/"_remix_parts"; temp.mkdir(parents=True,exist_ok=True)
     tr=json.loads((wd/"transcript.json").read_text(encoding="utf-8-sig"))
-    remixes=json.loads((wd/"remix_candidates.json").read_text(encoding="utf-8-sig"))
+    verified=wd/"verified_remixes.json"
+    remix_file=verified if verified.exists() else wd/"remix_candidates.json"
+    remixes=json.loads(remix_file.read_text(encoding="utf-8-sig"))
+    if remix_file.name!="verified_remixes.json":
+        raise SystemExit("Refusing to render unverified remixes. Run verify_remixes.py first.")
     if args.remixes:
         ids={int(x) for x in args.remixes.split(",") if x.strip().isdigit()}
         remixes=[r for i,r in enumerate(remixes,1) if i in ids]
