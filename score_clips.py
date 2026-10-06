@@ -152,8 +152,12 @@ def _grow_window(sentences, seed, taken, min_len, max_len):
     def span(a, b):
         return sentences[b]["end"] - sentences[a]["start"]
 
+    # Do not stop as soon as the minimum is reached. A technically valid
+    # 20-second cut often feels chopped-off in conversation. Aim for a useful
+    # editorial body (~34s by default), then finish on a complete thought.
+    target_len = min(max_len, max(min_len, 34))
     j = seed
-    while span(seed, j) < min_len and j + 1 < n and not taken[j + 1]:
+    while span(seed, j) < target_len and j + 1 < n and not taken[j + 1]:
         j += 1
     while span(seed, j) > max_len and j > seed:
         j -= 1
@@ -297,13 +301,13 @@ def print_table(segments):
 
 LLM_SYSTEM = (
     "You are a short-form campaign editor. Select strong self-contained moments from a timestamped transcript. Rules:\n"
-    "- Each clip MUST contain a complete thought: hook, build, payoff. Never end mid-sentence.\n"
-    "- Clip length between {min_len} and {max_len} seconds.\n"
+    "- Each clip MUST be a standalone mini-story: hook, enough context to understand it, build/reaction, payoff, then a clean exit. Never begin after required context and never end mid-thought.\n"
+    "- Clip length between {min_len} and {max_len} seconds. Prefer roughly 30-40 seconds when that extra context improves the story; do not pad weak moments.\n"
     "- Return UP TO {max_clips} clips. Overlapping variants are allowed when their framing differs, but never repeat the same cut.\n"
     "- Prioritize campaign relevance, standalone clarity, hook strength, emotion, insight/payoff and shareability.\n"
     "- Put a 0-10 quality score in 'overall'.\n"
     "- Only include clips with overall >= {min_score}.\n"
-    'Respond with JSON only: [{"start": <sec>, "end": <sec>, "hook": "<3-7 word editorial hook>", "overall": <0-10>}]'
+    'Respond with JSON only: [{{"start": <sec>, "end": <sec>, "hook": "<3-7 word editorial hook>", "overall": <0-10>}}]'
 )
 
 # ------------------------------------------------------------------- ollama
