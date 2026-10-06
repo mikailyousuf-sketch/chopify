@@ -189,6 +189,15 @@ def _make_segment(sentences, a, b):
     }
 
 
+def _segment_text(sentences, a, b):
+    return " ".join(s["text"] for s in sentences[a:b + 1])
+
+
+def _fingerprint(text):
+    """Only collapse effectively identical transcript cuts; similar variants survive."""
+    return " ".join(_norm_token(w) for w in text.split() if _norm_token(w))
+
+
 def build_candidates(sentences, min_len, max_len, max_clips, allow_overlap=True):
     """Seed windows at the highest-scoring sentences, grow to min_len, dedup, sort.
     Windows always end on a complete sentence (complete-thought rule)."""
@@ -197,6 +206,7 @@ def build_candidates(sentences, min_len, max_len, max_clips, allow_overlap=True)
     taken = [False] * len(sentences)
     accepted = []
     seen_windows = set()
+    seen_text = set()
 
     for seed in order:
         if (not allow_overlap and taken[seed]) or len(accepted) >= max_clips:
@@ -207,9 +217,11 @@ def build_candidates(sentences, min_len, max_len, max_clips, allow_overlap=True)
             continue
         a, b = w
         key = (round(sentences[a]["start"], 2), round(sentences[b]["end"], 2))
-        if key in seen_windows:
+        fp = _fingerprint(_segment_text(sentences, a, b))
+        if key in seen_windows or fp in seen_text:
             continue
         seen_windows.add(key)
+        seen_text.add(fp)
         accepted.append(_make_segment(sentences, a, b))
         if not allow_overlap:
             for k in range(a, b + 1):
@@ -282,6 +294,17 @@ def print_table(segments):
         print(f"  {i:>2}  {s['start']:8.2f} -> {s['end']:8.2f}  {s['overall']:4.1f}/10"
               f"  {s['hook']}", flush=True)
     print("  render a subset with --clips 1,3,5", flush=True)
+
+LLM_SYSTEM = (
+    "You are a short-form campaign editor. Select strong self-contained moments from a timestamped transcript. Rules:\n"
+    "- Each clip MUST contain a complete thought: hook, build, payoff. Never end mid-sentence.\n"
+    "- Clip length between {min_len} and {max_len} seconds.\n"
+    "- Return UP TO {max_clips} clips. Overlapping variants are allowed when their framing differs, but never repeat the same cut.\n"
+    "- Prioritize campaign relevance, standalone clarity, hook strength, emotion, insight/payoff and shareability.\n"
+    "- Put a 0-10 quality score in 'overall'.\n"
+    "- Only include clips with overall >= {min_score}.\n"
+    'Respond with JSON only: [{"start": <sec>, "end": <sec>, "hook": "<3-7 word editorial hook>", "overall": <0-10>}]'
+)
 
 # ------------------------------------------------------------------- ollama
 
@@ -408,8 +431,20 @@ def run(workdir, llm=None, host=OLLAMA_HOST, min_score=None, max_clips=45,
             mode = "ollama"
     if segments is None:
         ms = min_score if min_score is not None else 6.5
-        segments = build_candidates(sentences, min_len, max_len, max_clips)
-        segments = [s for s in segments if s["overall"] >= ms]
+        pool = build_candidates(sentences, min_len, max_len, max(max_clips * 3, max_clips))
+        strong = [s for s in pool if s["overall"] >= ms]
+        # Aim for the requested volume. If a long source has fewer clips above the
+        # quality floor, backfill with the next-best complete-thought candidates.
+        ranked = sorted(pool, key=lambda s: (-s["overall"], s["start"]))
+        segments = list(strong)
+        used = {(s["start"], s["end"]) for s in segments}
+        for seg in ranked:
+            if len(segments) >= max_clips:
+                break
+            if (seg["start"], seg["end"]) not in used:
+                segments.append(seg)
+                used.add((seg["start"], seg["end"]))
+        segments = sorted(segments[:max_clips], key=lambda s: s["start"])
 
     if not segments:                       # never ship zero clips silently
         print("No clip reached the threshold - keeping the single best candidate.",
@@ -465,23 +500,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
-# criterion -> weight (hook/energy/arc dominate; matches the README's 8 criteria)
-WEIGHTS = {"hook": 0.20, "shock": 0.10, "humour": 0.05, "controversy": 0.10,
-           "insight": 0.15, "emotion": 0.10, "energy": 0.15, "arc": 0.15}
-
-LLM_SYSTEM = (
-    "You are a short-form video editor. You receive a timestamped transcript. "
-    "Select the moments most likely to go viral as self-contained clips. Rules:\n"
-    "- Each clip MUST be a complete thought: hook, build, payoff. Never end mid-sentence.\n"
-    "- Clip length between {min_len} and {max_len} seconds.\n"
-    "- Return UP TO {max_clips} clips. Similar or overlapping moments are allowed, but never return the exact same start/end window twice.\n"
-    "- Rate each clip 0-10 on hook, shock, humour, controversy, insight, emotion, "
-    "energy and complete arc; put the mean in 'overall'.\n"
-    "- Only include clips with overall >= {min_score}.\n"
-    'Respond with JSON only, an array: [{{"start": <sec>, "end": <sec>, '
-    '"hook": "<3-7 word title>", "overall": <0-10>}}]'
-)
-
-# --- transcript helpers below ---
