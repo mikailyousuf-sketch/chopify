@@ -400,22 +400,44 @@ def render(seg, words, source, W, H, workdir, aspect, out_dir=None, style=DEFAUL
               original_hook=(editorial or {}).get("editorial_hook"))
 
     needs_track = cw < W * 0.95          # real horizontal crop -> track the speaker
+    filter_args = None
     if needs_track:
-        track = smooth_track(detect_track(render_src, start, dur, W, workdir), W, cw)
-        build_sendcmd(track, cw, out_dir / "_crop.cmd")
-        init_x = max(0, min(int(round(track[0][1] - cw / 2.0)), W - cw))
-        vf = (f"sendcmd=f=_crop.cmd,crop={cw}:{ch}:{init_x}:{y0},"
-              f"scale={tw}:{th},subtitles=_caption.ass")
-        mode = "speaker-tracked"
+        raw_track = detect_track(render_src, start, dur, W, workdir)
+        quality = tracking_quality(raw_track, W)
+        use_safe_layout = (
+            quality["no_face_ratio"] >= SAFE_NOFACE_RATIO
+            or quality["jumps"] >= SAFE_JUMP_COUNT
+        )
+        layout_name = "safe-full-frame" if use_safe_layout else "speaker-crop"
+        print(f"  tracking quality: no-face={quality['no_face_ratio']:.0%}, "
+              f"large-jumps={quality['jumps']}, layout={layout_name}", flush=True)
+
+        if use_safe_layout:
+            vf = (
+                f"scale={tw}:{th}:force_original_aspect_ratio=decrease,"
+                f"pad={tw}:{th}:(ow-iw)/2:(oh-ih)/2,"
+                f"subtitles=_caption.ass"
+            )
+            filter_args = ["-vf", vf]
+            mode = "safe-full-frame"
+        else:
+            track = smooth_track(raw_track, W, cw)
+            build_sendcmd(track, cw, out_dir / "_crop.cmd")
+            init_x = max(0, min(int(round(track[0][1] - cw / 2.0)), W - cw))
+            vf = (f"sendcmd=f=_crop.cmd,crop={cw}:{ch}:{init_x}:{y0},"
+                  f"scale={tw}:{th},subtitles=_caption.ass")
+            filter_args = ["-vf", vf]
+            mode = "speaker-tracked"
     else:
         vf = f"crop={cw}:{ch}:{x0}:{y0},scale={tw}:{th},subtitles=_caption.ass"
+        filter_args = ["-vf", vf]
         mode = "full-frame"
 
     suffix = ".preview" if preview else ""
     filename = sanitize(seg.get("hook", "clip")) + f"-{int(float(seg['start']) * 1000):08d}" + suffix + ".mp4"
     out = out_dir / filename
     cmd = ["ffmpeg", "-y", "-ss", f"{start:.3f}", "-i", str(render_src),
-           "-t", f"{dur:.3f}", "-vf", vf,
+           "-t", f"{dur:.3f}"] + filter_args + [
            "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
            "-c:a", "aac", "-b:a", "160k", "-movflags", "+faststart", filename]
     if loudnorm:
