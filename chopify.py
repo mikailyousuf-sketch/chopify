@@ -116,6 +116,12 @@ def main():
                     metavar="MODEL",
                     help="use a stronger OpenRouter cloud model for viral selection; "
                          "default openrouter/free; falls back to --llm when supplied")
+    ap.add_argument("--viral-judge", action="store_true",
+                    help="run a harsh comparative second-pass judge after discovery")
+    ap.add_argument("--find-remixes", action="store_true",
+                    help="find related multi-timestamp story remix opportunities")
+    ap.add_argument("--generate-captions", action="store_true",
+                    help="generate TikTok/Instagram/YouTube/X posting copy")
     ap.add_argument("--search", default=None, metavar="KEYWORDS",
                     help="skip virality scoring: clip around transcript sentences "
                          "containing ALL keywords (e.g. --search \"pricing\")")
@@ -172,6 +178,31 @@ def main():
     if args.clips:
         cmd += ["--clips", args.clips]
     sh(cmd)
+
+    # Optional Stage 2b: compare discoveries against each other so scores spread
+    # meaningfully instead of every decent moment receiving an arbitrary 9/10.
+    if args.viral_judge:
+        judge_cmd = [PY, HERE / "judge_clips.py", workdir,
+                     "--model", args.cloud_brain or "openrouter/free",
+                     "--keep", args.max_clips]
+        if args.campaign:
+            judge_cmd += ["--campaign", args.campaign]
+        sh(judge_cmd)
+
+    # Optional Stage 2c: discover truthful 2-4 timestamp story combinations.
+    # This currently writes remix_candidates.json for review; rendering support
+    # comes after we validate the proposed relationships.
+    if args.find_remixes:
+        remix_cmd = [PY, HERE / "find_remixes.py", workdir,
+                     "--model", args.cloud_brain or "openrouter/free"]
+        if args.campaign:
+            remix_cmd += ["--campaign", args.campaign]
+        sh(remix_cmd)
+
+    # Optional Stage 2d: platform-specific copy from the final judged clips.
+    if args.generate_captions:
+        sh([PY, HERE / "generate_captions.py", workdir,
+            "--model", args.cloud_brain or "openrouter/free"])
 
     # Stage 3: one vertical master serves TikTok/Reels/Shorts; X can be landscape.
     aspects = [args.aspect] if args.aspect else (["9:16", "16:9"] if args.platform == "all"
