@@ -88,6 +88,18 @@ def main():
     else:
         video = download(args.url, workdir)
         print("Downloaded:", video, flush=True)
+    transcript_path = workdir / "transcript.json"
+    if transcript_path.exists():
+        try:
+            cached = json.loads(transcript_path.read_text(encoding="utf-8-sig"))
+            same_video = Path(str(cached.get("video", ""))).resolve() == video.resolve()
+            same_model = cached.get("model") == args.model
+        except (OSError, ValueError, TypeError):
+            same_video = same_model = False
+        if same_video and same_model and cached.get("words"):
+            print("Transcript cache hit - skipping Whisper.", flush=True)
+            print("STAGE 1 COMPLETE", flush=True)
+            return
     transcribe(video, workdir, args.model, args.device, args.compute_type)
     print("STAGE 1 COMPLETE", flush=True)
 
