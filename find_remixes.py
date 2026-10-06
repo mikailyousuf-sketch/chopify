@@ -30,6 +30,11 @@ Rules:
 - Preserve chronology by default. A later moment may open as a flash-forward hook only
   if the final sequence remains truthful and understandable.
 - Do not create a remix if one continuous candidate is already stronger.
+- INTRO + RANDOM LATER ACTION is not a story. The later beat must resolve, answer,
+  contradict, escalate or pay off something specifically established by the earlier beat.
+- Reject combinations whose only connection is that they happen in the same video,
+  involve the same guest, or are both workouts/challenges.
+- hook must be a NEW 3-10 word editorial hook, never a transcript dump or paragraph.
 - Total assembled duration should usually be 25-50 seconds.
 - Use 2-4 pieces only. Prefer fewer cuts.
 - Each proposal needs a specific reason why the combination is stronger.
@@ -136,7 +141,13 @@ def main():
             continue
         if not 15 <= total <= 60:
             continue
+        hook = str(remix.get("hook") or "").strip()
+        # Transcript-dump hooks are a strong signal that the free model ignored
+        # the editorial schema; reject them rather than rendering garbage.
+        if len(hook.split()) < 3 or len(hook.split()) > 12:
+            continue
         out = dict(remix)
+        out["hook"] = hook
         out["assembled_duration"] = round(total, 2)
         out["viral_type"] = "story_remix"
         clean.append(out)
