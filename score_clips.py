@@ -319,10 +319,13 @@ def ollama_select(data, model, host, min_score, max_clips, min_len, max_len, cam
         return None
 
     def call(batch, batch_no, total_batches):
-        print(f"  AI editor: analysing chunk {batch_no}/{total_batches} ({len(batch)} sentences)...", flush=True)
+        per_chunk_target = max(3, (max_clips + total_batches - 1) // total_batches + 2)
+        print(f"  AI editor: analysing chunk {batch_no}/{total_batches} ({len(batch)} sentences, target {per_chunk_target})...", flush=True)
         lines = "\n".join(f"{s['start']:.1f}-{s['end']:.1f}: {s['text']}" for s in batch)
         sys_msg = LLM_SYSTEM.format(min_len=min_len, max_len=max_len,
                                     max_clips=max_clips, min_score=min_score)
+        sys_msg += (f"\n\nFor THIS transcript chunk, return the best {per_chunk_target} usable candidates if possible. "
+                    "Do not return zero merely because the material is imperfect; rank the strongest available moments.")
         if campaign:
             sys_msg += ("\n\nCAMPAIGN BRIEF:\n" + campaign +
                         "\nTreat campaign relevance as a major selection criterion. "
@@ -400,11 +403,34 @@ def ollama_select(data, model, host, min_score, max_clips, min_len, max_len, cam
         seen.add(key)
         dedup.append(seg)
     dedup = dedup[:max_clips]
+    if len(dedup) < max_clips:
+        need = max_clips - len(dedup)
+        print(f"  AI editor produced {len(dedup)}/{max_clips}; "
+              f"filling {need} slot(s) with complete-thought candidates.", flush=True)
+        pool = build_candidates(sentences, min_len, max_len, max(max_clips * 4, 40))
+        used = {(round(s["start"], 2), round(s["end"], 2)) for s in dedup}
+        # Prefer heuristic candidates that do not substantially duplicate an AI cut.
+        for seg in sorted(pool, key=lambda s: (-s["overall"], s["start"])):
+            key = (round(seg["start"], 2), round(seg["end"], 2))
+            if key in used:
+                continue
+            overlap = any(
+                max(0.0, min(seg["end"], x["end"]) - max(seg["start"], x["start"]))
+                / max(1.0, min(seg["end"] - seg["start"], x["end"] - x["start"])) > 0.82
+                for x in dedup
+            )
+            if overlap:
+                continue
+            seg["selection_source"] = "heuristic_fill"
+            dedup.append(seg)
+            used.add(key)
+            if len(dedup) >= max_clips:
+                break
+    for seg in dedup:
+        seg.setdefault("selection_source", "ollama")
+    dedup = dedup[:max_clips]
     dedup.sort(key=lambda s: s["start"])
-    if not dedup:
-        print("  AI editor returned no usable candidates -> heuristic fallback", flush=True)
-        return None
-    return dedup
+    return dedup if dedup else None
 
 
 def _nearest(values, t):
