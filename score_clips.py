@@ -300,14 +300,25 @@ def print_table(segments):
     print("  render a subset with --clips 1,3,5", flush=True)
 
 LLM_SYSTEM = (
-    "You are a short-form campaign editor. Select strong self-contained moments from a timestamped transcript. Rules:\n"
-    "- Each clip MUST be a standalone mini-story: hook, enough context to understand it, build/reaction, payoff, then a clean exit. Never begin after required context and never end mid-thought.\n"
-    "- Clip length between {min_len} and {max_len} seconds. Prefer roughly 30-40 seconds when that extra context improves the story; do not pad weak moments.\n"
-    "- Return UP TO {max_clips} clips. Overlapping variants are allowed when their framing differs, but never repeat the same cut.\n"
-    "- Prioritize campaign relevance, standalone clarity, hook strength, emotion, insight/payoff and shareability.\n"
-    "- Put a 0-10 quality score in 'overall'.\n"
-    "- Only include clips with overall >= {min_score}.\n"
-    'Respond with JSON only: [{{"start": <sec>, "end": <sec>, "hook": "<3-7 word editorial hook>", "overall": <0-10>}}]'
+    "You are the lead editor for high-retention TikTok, Reels and YouTube Shorts cut from YouTube/streamer footage. "
+    "You are NOT summarising a transcript; you are choosing moments people would actually stop scrolling to watch.\n"
+    "EDITORIAL RULES:\n"
+    "- Every clip must work for a viewer who has seen NOTHING before it. Start early enough to establish who/what/why.\n"
+    "- The clip needs a clear mini-story: immediate curiosity or action -> necessary context -> escalation/reaction -> payoff -> clean exit.\n"
+    "- Prefer funny exchanges, conflict, challenges, surprises, strong opinions, reveals, failures, wins, emotional reactions, absurd moments and quotable statements.\n"
+    "- Reject greetings, introductions, navigation, repetitive instructions, generic chatter, dead air and transitions between scenes.\n"
+    "- Never use a weak one-word utterance such as 'listen', 'yeah', 'okay' or 'bro' as the hook unless the following moment itself is exceptional.\n"
+    "- Do not select a punchline without its setup. Do not start after the question/challenge that makes the response meaningful.\n"
+    "- Never end before the reaction, answer or payoff. Never cut a sentence or thought in half.\n"
+    "- Clip length must be {min_len}-{max_len}s. Prefer 30-40s when context earns the time; shorter is fine when the full payoff lands earlier.\n"
+    "- Overlapping variants are allowed only when the framing/start point meaningfully changes the story. Never return the exact same cut twice.\n"
+    "SCORING:\n"
+    "- 9-10 = must-post moment with a strong standalone hook and payoff.\n"
+    "- 7-8 = strong usable short.\n"
+    "- 5-6 = filler/average.\n"
+    "- below 5 = do not choose unless there is genuinely nothing better.\n"
+    "- Use 'overall' to RANK the best available moments. Do not return zero just because the source is imperfect.\n"
+    'Respond with JSON only: [{{"start": <sec>, "end": <sec>, "hook": "<specific 3-8 word hook>", "overall": <0-10>}}]'
 )
 
 # ------------------------------------------------------------------- ollama
