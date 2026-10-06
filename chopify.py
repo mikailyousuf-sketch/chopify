@@ -102,7 +102,7 @@ def main():
                     help="remove filler words (um, uh...) and long silences")
     ap.add_argument("--loudnorm", action="store_true",
                     help="normalize audio to -14 LUFS (platform standard)")
-    ap.add_argument("--llm", nargs="?", const="qwen2.5:7b", default=None,
+    ap.add_argument("--campaign", default="",\n                    help="campaign brief: audience, desired moments, exclusions and rules")\n    ap.add_argument("--llm", nargs="?", const="qwen2.5:7b", default=None,
                     metavar="MODEL",
                     help="pick clips with a local Ollama model (e.g. qwen2.5:7b)")
     ap.add_argument("--search", default=None, metavar="KEYWORDS",
@@ -146,8 +146,7 @@ def main():
     cmd = [PY, HERE / "score_clips.py", workdir,
            "--max-clips", args.max_clips,
            "--min-len", args.min_len, "--max-len", args.max_len]
-    if args.llm:
-        cmd += ["--llm", args.llm]
+    if args.campaign:\n        cmd += ["--campaign", args.campaign]\n    if args.llm:\n        cmd += ["--llm", args.llm]
     if args.min_score is not None:
         cmd += ["--min-score", args.min_score]
     if args.search:
