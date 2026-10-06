@@ -278,7 +278,7 @@ def print_table(segments):
 
 # ------------------------------------------------------------------- ollama
 
-def ollama_select(data, model, host, min_score, max_clips, min_len, max_len, timeout=1800):
+def ollama_select(data, model, host, min_score, max_clips, min_len, max_len, campaign="", timeout=1800):
     """Ask local Ollama for clips. Returns list of dicts, or None on any failure."""
     sentences = sentenceize(data["words"])
     if not sentences:
@@ -286,8 +286,7 @@ def ollama_select(data, model, host, min_score, max_clips, min_len, max_len, tim
 
     def call(batch):
         lines = "\n".join(f"{s['start']:.1f}-{s['end']:.1f}: {s['text']}" for s in batch)
-        sys_msg = LLM_SYSTEM.format(min_len=min_len, max_len=max_len,
-                                    max_clips=max_clips, min_score=min_score)
+        sys_msg = LLM_SYSTEM.format(min_len=min_len, max_len=max_len,\n                                    max_clips=max_clips, min_score=min_score)\n        if campaign:\n            sys_msg += ("\\n\\nCAMPAIGN BRIEF:\\n" + campaign +\n                        "\\nTreat campaign relevance as a major selection criterion. " +\n                        "Reject moments that violate the brief.")
         payload = {
             "model": model, "stream": False, "format": "json",
             "options": {"temperature": 0.2},
@@ -418,7 +417,7 @@ def run(workdir, llm=None, host=OLLAMA_HOST, min_score=None, max_clips=10,
 def main():
     ap = argparse.ArgumentParser(description="Score a chopify transcript for virality.")
     ap.add_argument("workdir", nargs="?", default="work")
-    ap.add_argument("--llm", nargs="?", const="qwen2.5:7b", default=None, metavar="MODEL",
+    ap.add_argument("--campaign", default="",\n                    help="campaign brief/instructions used by local LLM selection")\n    ap.add_argument("--llm", nargs="?", const="qwen2.5:7b", default=None, metavar="MODEL",
                     help="score with a local Ollama model (e.g. qwen2.5:7b, llama3.1:8b)")
     ap.add_argument("--host", default=OLLAMA_HOST,
                     help="Ollama host (default http://localhost:11434)")
