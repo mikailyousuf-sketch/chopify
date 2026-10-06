@@ -70,7 +70,7 @@ def transcribe(video, workdir, model_size, device, compute_type):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("url")
+    ap.add_argument("url", help="Video URL or path to a local video file")
     ap.add_argument("--workdir", default="work")
     ap.add_argument("--model", default="medium",
                     help="faster-whisper model: tiny/base/small/medium/large-v3")
@@ -81,8 +81,13 @@ def main():
     workdir = Path(args.workdir)
     workdir.mkdir(parents=True, exist_ok=True)
 
-    video = download(args.url, workdir)
-    print("Downloaded:", video, flush=True)
+    local = Path(args.url).expanduser()
+    if local.exists() and local.is_file():
+        video = local.resolve()
+        print("Using local video:", video, flush=True)
+    else:
+        video = download(args.url, workdir)
+        print("Downloaded:", video, flush=True)
     transcribe(video, workdir, args.model, args.device, args.compute_type)
     print("STAGE 1 COMPLETE", flush=True)
 
