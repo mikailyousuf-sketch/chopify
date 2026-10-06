@@ -239,18 +239,44 @@ def smooth_track(track, W, crop_w):
         out.append((t, centre))
     return out
 
+def tracking_quality(track, W):
+    total = max(1, len(track))
+    missing = sum(1 for _, cx in track if cx is None)
+    known = [cx for _, cx in track if cx is not None]
+    jumps = sum(
+        1 for left, right in zip(known, known[1:])
+        if abs(right - left) > W * JUMP_FRAC
+    )
+    return {"no_face_ratio": missing / total, "jumps": jumps}
+
+
 def build_sendcmd(track, crop_w, path):
-    lines = []
-    last = None
+    """Hold framing steady; only pan when the subject has moved meaningfully."""
+    threshold = max(24, int(crop_w * PAN_THRESHOLD_FRAC))
+    anchors = []
+    last_x = None
     for t, cx in track:
         x = int(round(cx - crop_w / 2.0))
-        if last is None or abs(x - last) >= 2:
-            lines.append(f"{t:.2f} crop x {x};")
-            last = x
-    if not lines:
-        lines = ["0.0 crop x 0;"]
-    Path(path).write_text("\n".join(lines) + "\n", encoding="utf-8")
+        if last_x is None or abs(x - last_x) >= threshold:
+            anchors.append((t, x))
+            last_x = x
 
+    if not anchors:
+        anchors = [(0.0, 0)]
+
+    lines = [f"{anchors[0][0]:.2f} crop x {anchors[0][1]};"]
+    prev_t, prev_x = anchors[0]
+    for t, x in anchors[1:]:
+        start_t = max(prev_t, t - PAN_DURATION)
+        for step in range(1, PAN_STEPS + 1):
+            u = step / float(PAN_STEPS)
+            eased = u * u * (3.0 - 2.0 * u)
+            tt = start_t + (t - start_t) * u
+            xx = int(round(prev_x + (x - prev_x) * eased))
+            lines.append(f"{tt:.2f} crop x {xx};")
+        prev_t, prev_x = t, x
+
+    Path(path).write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 def ass_time(t):
     t = max(0.0, t)
