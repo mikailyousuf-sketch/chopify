@@ -318,7 +318,8 @@ def ollama_select(data, model, host, min_score, max_clips, min_len, max_len, cam
     if not sentences:
         return None
 
-    def call(batch):
+    def call(batch, batch_no, total_batches):
+        print(f"  AI editor: analysing chunk {batch_no}/{total_batches} ({len(batch)} sentences)...", flush=True)
         lines = "\n".join(f"{s['start']:.1f}-{s['end']:.1f}: {s['text']}" for s in batch)
         sys_msg = LLM_SYSTEM.format(min_len=min_len, max_len=max_len,
                                     max_clips=max_clips, min_score=min_score)
@@ -340,14 +341,28 @@ def ollama_select(data, model, host, min_score, max_clips, min_len, max_len, cam
         with urllib.request.urlopen(req, timeout=timeout) as r:
             resp = json.loads(r.read().decode("utf-8"))
         content = resp.get("message", {}).get("content", "")
-        m = re.search(r"\[.*\]", content, re.S)
-        return json.loads(m.group(0)) if m else []
+        try:
+            parsed = json.loads(content)
+        except json.JSONDecodeError:
+            m = re.search(r"\[.*\]", content, re.S)
+            parsed = json.loads(m.group(0)) if m else []
+        if isinstance(parsed, dict):
+            for key in ("clips", "segments", "candidates", "results"):
+                if isinstance(parsed.get(key), list):
+                    parsed = parsed[key]
+                    break
+            else:
+                parsed = [parsed] if "start" in parsed and "end" in parsed else []
+        clips = parsed if isinstance(parsed, list) else []
+        print(f"  AI editor: chunk {batch_no}/{total_batches} returned {len(clips)} candidate(s).", flush=True)
+        return clips
 
     try:
-        chunks = [sentences[i:i + 400] for i in range(0, len(sentences), 400)] or [[]]
+        chunks = [sentences[i:i + 240] for i in range(0, len(sentences), 240)] or [[]]
         raw = []
-        for batch in chunks:
-            raw.extend(call(batch) or [])
+        print(f"  AI editor: {len(chunks)} transcript chunk(s), model={model}", flush=True)
+        for batch_no, batch in enumerate(chunks, 1):
+            raw.extend(call(batch, batch_no, len(chunks)) or [])
     except Exception as e:                                   # noqa: BLE001
         print(f"  Ollama unavailable ({e}) -> heuristic scoring", flush=True)
         return None
@@ -386,6 +401,9 @@ def ollama_select(data, model, host, min_score, max_clips, min_len, max_len, cam
         dedup.append(seg)
     dedup = dedup[:max_clips]
     dedup.sort(key=lambda s: s["start"])
+    if not dedup:
+        print("  AI editor returned no usable candidates -> heuristic fallback", flush=True)
+        return None
     return dedup
 
 
