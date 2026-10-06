@@ -270,7 +270,8 @@ def pick_segments(segments, spec):
 
 def print_table(segments):
     """Numbered candidate table - pairs with --clips for the review workflow."""
-    print("\n  #    start ->      end  score  hook", flush=True)
+    print("
+  #    start ->      end  score  hook", flush=True)
     for i, s in enumerate(segments, 1):
         print(f"  {i:>2}  {s['start']:8.2f} -> {s['end']:8.2f}  {s['overall']:4.1f}/10"
               f"  {s['hook']}", flush=True)
@@ -285,14 +286,27 @@ def ollama_select(data, model, host, min_score, max_clips, min_len, max_len, cam
         return None
 
     def call(batch):
-        lines = "\n".join(f"{s['start']:.1f}-{s['end']:.1f}: {s['text']}" for s in batch)
-        sys_msg = LLM_SYSTEM.format(min_len=min_len, max_len=max_len,\n                                    max_clips=max_clips, min_score=min_score)\n        if campaign:\n            sys_msg += ("\\n\\nCAMPAIGN BRIEF:\\n" + campaign +\n                        "\\nTreat campaign relevance as a major selection criterion. " +\n                        "Reject moments that violate the brief.")
+        lines = "
+".join(f"{s['start']:.1f}-{s['end']:.1f}: {s['text']}" for s in batch)
+        sys_msg = LLM_SYSTEM.format(min_len=min_len, max_len=max_len,
+                                    max_clips=max_clips, min_score=min_score)
+        if campaign:
+            sys_msg += ("\
+\
+CAMPAIGN BRIEF:\
+" + campaign +
+                        "\
+Treat campaign relevance as a major selection criterion. " +
+                        "Reject moments that violate the brief.")
         payload = {
             "model": model, "stream": False, "format": "json",
             "options": {"temperature": 0.2},
             "messages": [{"role": "system", "content": sys_msg},
                          {"role": "user", "content":
-                          f"Video duration: {data['duration']:.0f}s\n\nTranscript:\n{lines}"}],
+                          f"Video duration: {data['duration']:.0f}s
+
+Transcript:
+{lines}"}],
         }
         req = urllib.request.Request(
             host.rstrip("/") + "/api/chat",
@@ -417,7 +431,9 @@ def run(workdir, llm=None, host=OLLAMA_HOST, min_score=None, max_clips=10,
 def main():
     ap = argparse.ArgumentParser(description="Score a chopify transcript for virality.")
     ap.add_argument("workdir", nargs="?", default="work")
-    ap.add_argument("--campaign", default="",\n                    help="campaign brief/instructions used by local LLM selection")\n    ap.add_argument("--llm", nargs="?", const="qwen2.5:7b", default=None, metavar="MODEL",
+    ap.add_argument("--campaign", default="",
+                    help="campaign brief/instructions used by local LLM selection")
+    ap.add_argument("--llm", nargs="?", const="qwen2.5:7b", default=None, metavar="MODEL",
                     help="score with a local Ollama model (e.g. qwen2.5:7b, llama3.1:8b)")
     ap.add_argument("--host", default=OLLAMA_HOST,
                     help="Ollama host (default http://localhost:11434)")
@@ -448,13 +464,19 @@ WEIGHTS = {"hook": 0.20, "shock": 0.10, "humour": 0.05, "controversy": 0.10,
 
 LLM_SYSTEM = (
     "You are a short-form video editor. You receive a timestamped transcript. "
-    "Select the moments most likely to go viral as self-contained clips. Rules:\n"
-    "- Each clip MUST be a complete thought: hook, build, payoff. Never end mid-sentence.\n"
-    "- Clip length between {min_len} and {max_len} seconds.\n"
-    "- Return AT MOST {max_clips} clips, taken from DIFFERENT parts of the video.\n"
+    "Select the moments most likely to go viral as self-contained clips. Rules:
+"
+    "- Each clip MUST be a complete thought: hook, build, payoff. Never end mid-sentence.
+"
+    "- Clip length between {min_len} and {max_len} seconds.
+"
+    "- Return AT MOST {max_clips} clips, taken from DIFFERENT parts of the video.
+"
     "- Rate each clip 0-10 on hook, shock, humour, controversy, insight, emotion, "
-    "energy and complete arc; put the mean in 'overall'.\n"
-    "- Only include clips with overall >= {min_score}.\n"
+    "energy and complete arc; put the mean in 'overall'.
+"
+    "- Only include clips with overall >= {min_score}.
+"
     'Respond with JSON only, an array: [{{"start": <sec>, "end": <sec>, '
     '"hook": "<3-7 word title>", "overall": <0-10>}}]'
 )
