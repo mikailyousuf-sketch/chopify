@@ -112,6 +112,10 @@ def main():
     ap.add_argument("--llm", nargs="?", const="qwen2.5:3b", default=None,
                     metavar="MODEL",
                     help="pick clips with a local Ollama model (default qwen2.5:3b)")
+    ap.add_argument("--cloud-brain", nargs="?", const="openrouter/free", default=None,
+                    metavar="MODEL",
+                    help="use a stronger OpenRouter cloud model for viral selection; "
+                         "default openrouter/free; falls back to --llm when supplied")
     ap.add_argument("--search", default=None, metavar="KEYWORDS",
                     help="skip virality scoring: clip around transcript sentences "
                          "containing ALL keywords (e.g. --search \"pricing\")")
@@ -157,6 +161,8 @@ def main():
         cmd += ["--campaign", args.campaign]
     if args.original_mode:
         cmd += ["--original-mode"]
+    if args.cloud_brain:
+        cmd += ["--cloud-model", args.cloud_brain]
     if args.llm:
         cmd += ["--llm", args.llm]
     if args.min_score is not None:
