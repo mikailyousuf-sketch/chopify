@@ -64,8 +64,8 @@ def get_style(name):
     return CAPTION_STYLES[name]
 
 WORDS_PER_LINE = 3
-DET_FPS = 5
-DET_W = 640
+DET_FPS = 3
+DET_W = 384
 EMA_ALPHA = 0.14
 JUMP_FRAC = 0.22
 MARGIN_FRAC = 0.18
@@ -134,12 +134,16 @@ def detect_track(source, start, dur, W, workdir):
     """Low-res detection pass -> [(t_rel, center_x_source_px or None)]."""
     import cv2
     det_path = Path(workdir) / "_det.mp4"
+    print(f"  tracking: building {DET_FPS}fps/{DET_W}px detection proxy...", flush=True)
     subprocess.run(
-        ["ffmpeg", "-y", "-ss", f"{start:.3f}", "-i", str(source),
-         "-t", f"{dur:.3f}", "-vf", f"fps={DET_FPS},scale={DET_W}:-2",
-         "-an", str(det_path)],
-        check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        ["ffmpeg", "-y", "-ss", f"{start:.3f}", "-t", f"{dur:.3f}",
+         "-i", str(source), "-vf", f"fps={DET_FPS},scale={DET_W}:-2",
+         "-an", "-c:v", "libx264", "-preset", "ultrafast", "-crf", "30",
+         "-threads", "2", str(det_path)],
+        check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        timeout=max(90, int(dur * 4)))
     kind, det = _make_detector(workdir)
+    print(f"  tracking: detecting faces ({kind})...", flush=True)
     cap = cv2.VideoCapture(str(det_path))
     dw = cap.get(cv2.CAP_PROP_FRAME_WIDTH) or DET_W
     dh = cap.get(cv2.CAP_PROP_FRAME_HEIGHT) or 360
@@ -172,6 +176,7 @@ def detect_track(source, start, dur, W, workdir):
         det_path.unlink()
     except OSError:
         pass
+    print(f"  tracking: {len(track)} detection frames complete.", flush=True)
     return track
 
 
