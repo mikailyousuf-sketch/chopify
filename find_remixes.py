@@ -76,20 +76,37 @@ def main():
 
     wd = Path(args.workdir)
     transcript = json.loads((wd / "transcript.json").read_text(encoding="utf-8-sig"))
-    discovery_path = wd / "segments.discovery.json"
-    source_path = discovery_path if discovery_path.exists() else wd / "segments.json"
-    segments = json.loads(source_path.read_text(encoding="utf-8-sig"))
-
+    # Remix discovery needs smaller beats than standalone 25-45s clips. Build a
+    # compact timeline from transcript words (~10s windows) so an early promise
+    # can be related to a later payoff even when neither beat was a full clip.
+    words = transcript["words"]
+    duration = float(transcript.get("duration") or (words[-1]["end"] if words else 0))
     moments = []
-    for i, seg in enumerate(segments, 1):
-        moments.append({
-            "id": i, "start": seg["start"], "end": seg["end"],
-            "type": seg.get("viral_type"), "hook": seg.get("hook"),
-            "score": seg.get("overall"),
-            "transcript": text_for(
-                transcript["words"], float(seg["start"]), float(seg["end"])
-            ),
-        })
+    window, step = 12.0, 10.0
+    t, idx = 0.0, 1
+    while t < duration:
+        end = min(duration, t + window)
+        txt = text_for(words, t, end)
+        if len(txt.split()) >= 6:
+            moments.append({
+                "id": idx, "start": round(t, 2), "end": round(end, 2),
+                "transcript": txt,
+            })
+            idx += 1
+        t += step
+
+    # Keep judged/discovered hooks as editorial landmarks too.
+    source_path = wd / "segments.json"
+    if source_path.exists():
+        for seg in json.loads(source_path.read_text(encoding="utf-8-sig")):
+            moments.append({
+                "id": idx, "start": seg["start"], "end": seg["end"],
+                "type": seg.get("viral_type"), "hook": seg.get("hook"),
+                "score": seg.get("overall"),
+                "transcript": text_for(words, float(seg["start"]), float(seg["end"])),
+                "landmark": True,
+            })
+            idx += 1
 
     payload = {
         "model": args.model,
@@ -104,7 +121,7 @@ def main():
             }, ensure_ascii=False)},
         ],
     }
-    print(f"Remix finder: relating {len(moments)} moments with {args.model}...", flush=True)
+    print(f"Remix finder: relating {len(moments)} timeline beats with {args.model}...", flush=True)
     parsed = json.loads(call(args.host, args.model, key, payload))
     remixes = parsed.get("remixes", []) if isinstance(parsed, dict) else []
 
