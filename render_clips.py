@@ -72,6 +72,11 @@ MARGIN_FRAC = 0.18
 # Require a new far-away face to persist before changing subjects. This stops
 # two-person scenes from ping-ponging the vertical crop every few frames.
 SUBJECT_SWITCH_FRAMES = 4
+SAFE_NOFACE_RATIO = 0.10
+SAFE_JUMP_COUNT = 5
+PAN_THRESHOLD_FRAC = 0.08
+PAN_DURATION = 0.60
+PAN_STEPS = 8
 YUNET_URL = ("https://github.com/opencv/opencv_zoo/raw/main/models/"
              "face_detection_yunet/face_detection_yunet_2023mar.onnx")
 
