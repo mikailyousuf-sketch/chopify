@@ -90,11 +90,10 @@ def sh(cmd):
 def main():
     ap = argparse.ArgumentParser(
         prog="chopify",
-        description="YouTube link -> scored, captioned clips. 100% local, free.")
-    ap.add_argument("url", help="YouTube URL (or any yt-dlp-supported URL)")
+        description="Long video -> campaign-scored clips for TikTok, Reels, Shorts and X. Local-first and free.")
+    ap.add_argument("url", help="Local video path or any yt-dlp-supported URL")
     ap.add_argument("--workdir", default="work", help="intermediate files dir")
-    ap.add_argument("--aspect", default="16:9", choices=["16:9", "9:16", "1:1"],
-                    help="output aspect ratio (default 16:9)")
+    ap.add_argument("--platform", default="vertical", choices=["vertical", "x", "all"],\n                    help="vertical=TikTok/Reels/Shorts, x=landscape X export, all=both")\n    ap.add_argument("--aspect", default=None, choices=["16:9", "9:16", "1:1"],\n                    help="override output aspect ratio")
     ap.add_argument("--out", default=None,
                     help="output directory (default ./clips, or $CHOPIFY_OUT)")
     ap.add_argument("--style", default="default",
@@ -157,9 +156,7 @@ def main():
         cmd += ["--clips", args.clips]
     sh(cmd)
 
-    # Stage 3: render
-    cmd = [PY, HERE / "render_clips.py", workdir,
-           "--aspect", args.aspect, "--style", args.style]
+    # Stage 3: render. One vertical master serves TikTok, Instagram Reels and\n    # YouTube Shorts; X can receive a landscape master when requested.\n    aspects = [args.aspect] if args.aspect else (["9:16", "16:9"] if args.platform == "all"\n                                                else ["16:9"] if args.platform == "x"\n                                                else ["9:16"])\n    for aspect in aspects:\n        platform_out = args.out\n        if args.platform == "all" and args.out:\n            platform_out = str(Path(args.out) / ("vertical" if aspect == "9:16" else "x"))\n        cmd = [PY, HERE / "render_clips.py", workdir,\n               "--aspect", aspect, "--style", args.style]\n        if platform_out:\n            cmd += ["--out", platform_out]\n        if args.tighten:\n            cmd.append("--tighten")\n        if args.loudnorm:\n            cmd.append("--loudnorm")\n        if args.preview:\n            cmd.append("--preview")\n        sh(cmd)\n    print("\\nCHOPIFY CREATOR REWARDS COMPLETE", flush=True)\n    return\n\n    # legacy single-render path
     if args.out:
         cmd += ["--out", args.out]
     if args.tighten:
