@@ -611,7 +611,8 @@ def _nearest(values, t):
 # ----------------------------------------------------------------- run / cli
 
 def run(workdir, llm=None, host=OLLAMA_HOST, min_score=None, max_clips=45,
-        min_len=20, max_len=60, search=None, pick=None, campaign="", original_mode=False):
+        min_len=20, max_len=60, search=None, pick=None, campaign="", original_mode=False,
+        cloud_model=None, cloud_host=OPENROUTER_HOST):
     """Score the transcript in workdir and write workdir/segments.json.
 
     Returns (segments, mode) where mode is 'ollama' or 'heuristic'.
@@ -632,6 +633,25 @@ def run(workdir, llm=None, host=OLLAMA_HOST, min_score=None, max_clips=45,
                 f"--search '{search}': no transcript sentence matched. "
                 "Try fewer or different keywords.")
         print(f"Keyword search '{search}': {len(segments)} match(es)", flush=True)
+    elif cloud_model:
+        ms = min_score if min_score is not None else 8.0
+        api_key = os.environ.get("OPENROUTER_API_KEY", "").strip()
+        if not api_key:
+            print("  OPENROUTER_API_KEY not set -> local fallback", flush=True)
+        else:
+            segments = openrouter_select(
+                data, cloud_model, api_key, cloud_host, ms, max_clips,
+                min_len, max_len, campaign=campaign
+            )
+            if segments is not None:
+                mode = "openrouter"
+        if segments is None and llm:
+            print("  Falling back to local Ollama viral brain.", flush=True)
+            segments = ollama_select(
+                data, llm, host, ms, max_clips, min_len, max_len, campaign=campaign
+            )
+            if segments is not None:
+                mode = "ollama"
     elif llm:
         ms = min_score if min_score is not None else 8.0
         segments = ollama_select(data, llm, host, ms, max_clips, min_len, max_len, campaign=campaign)
@@ -688,6 +708,11 @@ def main():
                     help="score with a local Ollama model (e.g. qwen2.5:7b, llama3.1:8b)")
     ap.add_argument("--host", default=OLLAMA_HOST,
                     help="Ollama host (default http://localhost:11434)")
+    ap.add_argument("--cloud-model", default=None, metavar="MODEL",
+                    help="use OpenRouter/OpenAI-compatible cloud brain; "
+                         "recommended free router: openrouter/free")
+    ap.add_argument("--cloud-host", default=OPENROUTER_HOST,
+                    help="OpenAI-compatible cloud API base URL")
     ap.add_argument("--min-score", type=float, default=None,
                     help="keep clips at/above this score (default 6.5 heuristic, 8.0 llm)")
     ap.add_argument("--max-clips", type=int, default=45)
@@ -702,7 +727,8 @@ def main():
     args = ap.parse_args()
     run(args.workdir, args.llm, args.host, args.min_score, args.max_clips,
         args.min_len, args.max_len, search=args.search, pick=args.clips,
-        campaign=args.campaign, original_mode=args.original_mode)
+        campaign=args.campaign, original_mode=args.original_mode,
+        cloud_model=args.cloud_model, cloud_host=args.cloud_host)
     print("SCORING COMPLETE", flush=True)
 
 
