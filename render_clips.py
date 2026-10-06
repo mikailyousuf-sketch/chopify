@@ -413,12 +413,17 @@ def render(seg, words, source, W, H, workdir, aspect, out_dir=None, style=DEFAUL
               f"large-jumps={quality['jumps']}, layout={layout_name}", flush=True)
 
         if use_safe_layout:
+            # Keep the full source visible for text, graphics and wide/unstable
+            # scenes, with a blurred duplicate filling the vertical canvas.
             vf = (
-                f"scale={tw}:{th}:force_original_aspect_ratio=decrease,"
-                f"pad={tw}:{th}:(ow-iw)/2:(oh-ih)/2,"
-                f"subtitles=_caption.ass"
+                f"[0:v]split=2[bg][fg];"
+                f"[bg]scale={tw}:{th}:force_original_aspect_ratio=increase,"
+                f"crop={tw}:{th},boxblur=18:2[bg2];"
+                f"[fg]scale={tw}:{th}:force_original_aspect_ratio=decrease[fg2];"
+                f"[bg2][fg2]overlay=(W-w)/2:(H-h)/2,"
+                f"subtitles=_caption.ass[v]"
             )
-            filter_args = ["-vf", vf]
+            filter_args = ["-filter_complex", vf, "-map", "[v]", "-map", "0:a?"]
             mode = "safe-full-frame"
         else:
             track = smooth_track(raw_track, W, cw)
