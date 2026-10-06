@@ -81,8 +81,7 @@ def check_environment(runner=subprocess.run):
 
 
 def sh(cmd):
-    print("
-" + "=" * 70, flush=True)
+    print("\n" + "=" * 70, flush=True)
     print(">", " ".join(str(c) for c in cmd), flush=True)
     print("=" * 70, flush=True)
     subprocess.run([str(c) for c in cmd], check=True)
@@ -91,11 +90,11 @@ def sh(cmd):
 def main():
     ap = argparse.ArgumentParser(
         prog="chopify",
-        description="Long video -> campaign-scored clips for TikTok, Reels, Shorts and X. Local-first and free.")
+        description="Long video -> campaign clips for TikTok, Reels, Shorts and X. Local-first and free.")
     ap.add_argument("url", help="Local video path or any yt-dlp-supported URL")
     ap.add_argument("--workdir", default="work", help="intermediate files dir")
     ap.add_argument("--platform", default="vertical", choices=["vertical", "x", "all"],
-                    help="vertical=TikTok/Reels/Shorts, x=landscape X export, all=both")
+                    help="vertical=TikTok/Reels/Shorts, x=landscape X, all=both")
     ap.add_argument("--aspect", default=None, choices=["16:9", "9:16", "1:1"],
                     help="override output aspect ratio")
     ap.add_argument("--out", default=None,
@@ -122,8 +121,7 @@ def main():
                          "picks before the full render")
     ap.add_argument("--min-score", type=float, default=None,
                     help="keep clips at/above this virality score")
-    ap.add_argument("--max-clips", type=int, default=45,
-                    help="target number of candidate clips (default 45)")
+    ap.add_argument("--max-clips", type=int, default=45)
     ap.add_argument("--min-len", type=int, default=20, help="min clip seconds")
     ap.add_argument("--max-len", type=int, default=60, help="max clip seconds")
     ap.add_argument("--whisper-model", default="medium",
@@ -165,8 +163,7 @@ def main():
         cmd += ["--clips", args.clips]
     sh(cmd)
 
-    # Stage 3: render. One vertical master serves TikTok, Instagram Reels and
-    # YouTube Shorts; X can receive a landscape master when requested.
+    # Stage 3: one vertical master serves TikTok/Reels/Shorts; X can be landscape.
     aspects = [args.aspect] if args.aspect else (["9:16", "16:9"] if args.platform == "all"
                                                 else ["16:9"] if args.platform == "x"
                                                 else ["9:16"])
@@ -185,22 +182,7 @@ def main():
         if args.preview:
             cmd.append("--preview")
         sh(cmd)
-    print("\
-CHOPIFY CREATOR REWARDS COMPLETE", flush=True)
-    return
-
-    # legacy single-render path
-    if args.out:
-        cmd += ["--out", args.out]
-    if args.tighten:
-        cmd.append("--tighten")
-    if args.loudnorm:
-        cmd.append("--loudnorm")
-    if args.preview:
-        cmd.append("--preview")
-    sh(cmd)
-    print("
-CHOPIFY COMPLETE", flush=True)
+    print("\nCHOPIFY CREATOR REWARDS COMPLETE", flush=True)
 
 
 if __name__ == "__main__":
