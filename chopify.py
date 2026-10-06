@@ -107,6 +107,8 @@ def main():
                     help="normalize audio to -14 LUFS (platform standard)")
     ap.add_argument("--campaign", default="",
                     help="campaign brief: audience, desired moments, exclusions and rules")
+    ap.add_argument("--original-mode", action=argparse.BooleanOptionalAction, default=False,
+                    help="transform clips with an original editorial layer (toggle with --original-mode/--no-original-mode)")
     ap.add_argument("--llm", nargs="?", const="qwen2.5:7b", default=None,
                     metavar="MODEL",
                     help="pick clips with a local Ollama model (e.g. qwen2.5:7b)")
@@ -153,6 +155,8 @@ def main():
            "--min-len", args.min_len, "--max-len", args.max_len]
     if args.campaign:
         cmd += ["--campaign", args.campaign]
+    if args.original_mode:
+        cmd += ["--original-mode"]
     if args.llm:
         cmd += ["--llm", args.llm]
     if args.min_score is not None:
