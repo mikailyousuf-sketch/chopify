@@ -3,7 +3,7 @@ Chopify V1 local dashboard.
 Run: python dashboard.py
 Open: http://127.0.0.1:8765
 """
-import json, shutil, subprocess, sys, threading, webbrowser
+import json, os, shutil, subprocess, sys, threading, webbrowser
 from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
 from pathlib import Path
 from urllib.parse import urlparse, unquote
@@ -17,6 +17,8 @@ UPLOADS=WORK/"uploads"
 PREVIEWS=WORK/"dashboard_previews"
 PY=sys.executable
 STATE={"running":False,"stage":"Ready","log":[],"error":None}
+PUBLISH_FILE=WORK/"publish_jobs.json"
+PLATFORMS=("tiktok","instagram","youtube","x")
 LOCK=threading.Lock()
 
 def log(s):
@@ -106,6 +108,52 @@ def render_selected(data):
         set_state(error=str(e),stage="Failed");log("ERROR: "+str(e))
     finally:set_state(running=False)
 
+
+def rendered_for(seg):
+    stem=render_clips.sanitize(seg.get("hook","clip"))+f"-{int(float(seg['start'])*1000):08d}"
+    p=ROOT/"clips"/(stem+".mp4")
+    return p if p.exists() else None
+
+def platform_connections():
+    # V1 keeps credentials local. Presence means the adapter can be configured;
+    # actual API adapters are enabled individually rather than faking a post.
+    req={
+      "tiktok":["TIKTOK_ACCESS_TOKEN"],
+      "instagram":["META_ACCESS_TOKEN","INSTAGRAM_USER_ID"],
+      "youtube":["YOUTUBE_CLIENT_SECRETS"],
+      "x":["X_ACCESS_TOKEN"],
+    }
+    return {k:all(os.environ.get(x,"").strip() for x in v) for k,v in req.items()}
+
+def publish_jobs():
+    return read_json(PUBLISH_FILE,[])
+
+def queue_publish(data):
+    ids=sorted({int(x) for x in data.get("ids",[])})
+    platforms=[p for p in data.get("platforms",[]) if p in PLATFORMS]
+    if not ids or not platforms: raise RuntimeError("Select clips and at least one platform.")
+    segs=read_json(WORK/"segments.json",[])
+    caps=read_json(WORK/"captions.json",[])
+    cm={int(x.get("id",i+1)):x for i,x in enumerate(caps) if isinstance(x,dict)}
+    con=platform_connections(); jobs=publish_jobs()
+    created=[]
+    for cid in ids:
+        if cid<1 or cid>len(segs):continue
+        video=rendered_for(segs[cid-1])
+        for platform in platforms:
+            # idempotency key prevents an accidental retry from duplicating a success
+            key=f"{cid}:{platform}:{video.name if video else 'unrendered'}"
+            old=next((j for j in jobs if j.get("key")==key and j.get("status")=="posted"),None)
+            if old:
+                created.append(old);continue
+            status="ready" if video and con.get(platform) else ("needs_connection" if video else "needs_render")
+            job={"key":key,"clip_id":cid,"platform":platform,"status":status,
+                 "video":str(video) if video else None,"caption":cm.get(cid,{}),
+                 "error":None}
+            jobs=[j for j in jobs if j.get("key")!=key];jobs.append(job);created.append(job)
+    PUBLISH_FILE.write_text(json.dumps(jobs,ensure_ascii=False,indent=2),encoding="utf-8")
+    return created
+
 def save_caption(data):
     clip_id=int(data["id"])
     caps=read_json(WORK/"captions.json",[])
@@ -135,6 +183,8 @@ class Handler(SimpleHTTPRequestHandler):
     def do_GET(self):
         p=urlparse(self.path).path
         if p=="/api/status":return self.send_json(STATE)
+        if p=="/api/publish-status":
+            return self.send_json({"connections":platform_connections(),"jobs":publish_jobs()})
         if p=="/api/clips":
             segs=read_json(WORK/"segments.json",[])
             caps=read_json(WORK/"captions.json",[])
@@ -166,6 +216,9 @@ class Handler(SimpleHTTPRequestHandler):
         except Exception:return self.send_json({"error":"Invalid request"},400)
         if self.path=="/api/caption":
             save_caption(data);return self.send_json({"ok":True})
+        if self.path=="/api/publish":
+            try:return self.send_json({"ok":True,"jobs":queue_publish(data)})
+            except Exception as e:return self.send_json({"error":str(e)},400)
         if STATE["running"]:return self.send_json({"error":"A job is already running"},409)
         if self.path=="/api/analyze":
             threading.Thread(target=pipeline,args=(data,),daemon=True).start()
